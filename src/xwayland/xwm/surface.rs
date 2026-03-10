@@ -162,6 +162,12 @@ pub enum WmWindowProperty {
     StartupId,
     Pid,
     Opacity,
+    /// The `_XWAYLAND_RANDR_EMU_MONITOR_RECTS` property changed.
+    ///
+    /// Xwayland sets this property on toplevel windows of clients that have
+    /// changed the (emulated) resolution through a RandR call. The compositor
+    /// should re-evaluate the fullscreen geometry for these windows.
+    XwaylandRandrEmuMonitorRects,
 }
 
 /// https://x.org/releases/X11R7.6/doc/xorg-docs/specs/ICCCM/icccm.html#input_focus
@@ -742,6 +748,9 @@ impl X11Surface {
                 self.update_opacity()?;
                 Ok(Some(WmWindowProperty::Opacity))
             }
+            atom if atom == self.atoms._XWAYLAND_RANDR_EMU_MONITOR_RECTS => {
+                Ok(Some(WmWindowProperty::XwaylandRandrEmuMonitorRects))
+            }
 
             _ => Ok(None), // unknown
         }
@@ -975,6 +984,42 @@ impl X11Surface {
         }
 
         Ok(None)
+    }
+
+    /// Read the `_XWAYLAND_RANDR_EMU_MONITOR_RECTS` property.
+    ///
+    /// Xwayland sets this property on toplevel windows of clients that have changed
+    /// the (emulated) resolution through a RandR call. Each rect is `(x, y, width, height)`
+    /// describing the emulated monitor geometry. The compositor should use this to
+    /// adjust the fullscreen size when the window goes fullscreen via `_NET_WM_STATE_FULLSCREEN`.
+    ///
+    /// Returns a list of `(x, y, width, height)` tuples representing emulated monitor rects.
+    pub fn xwayland_randr_emu_monitor_rects(&self) -> Result<Vec<(i32, i32, i32, i32)>, ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let reply = match conn
+            .get_property(
+                false,
+                self.window,
+                self.atoms._XWAYLAND_RANDR_EMU_MONITOR_RECTS,
+                AtomEnum::CARDINAL,
+                0,
+                256,
+            )?
+            .reply_unchecked()
+        {
+            Ok(Some(reply)) => reply,
+            Ok(None) | Err(ConnectionError::ParseError(_)) => return Ok(Vec::new()),
+            Err(err) => return Err(err),
+        };
+
+        let Some(values) = reply.value32() else {
+            return Ok(Vec::new());
+        };
+        let values: Vec<u32> = values.collect();
+        Ok(values
+            .chunks_exact(4)
+            .map(|chunk| (chunk[0] as i32, chunk[1] as i32, chunk[2] as i32, chunk[3] as i32))
+            .collect())
     }
 
     /// Retrieve user_data associated with this X11 window

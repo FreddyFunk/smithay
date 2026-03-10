@@ -244,6 +244,9 @@ mod atoms {
             _NET_SUPPORTING_WM_CHECK,
             _XSETTINGS_SETTINGS,
 
+            // xwayland
+            _XWAYLAND_RANDR_EMU_MONITOR_RECTS,
+
             // selection
             _WL_SELECTION,
             CLIPBOARD_MANAGER,
